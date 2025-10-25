@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Recognition Test - Store & Match</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1000px;
+            margin: 30px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+        h2 {
+            color: #555;
+            margin-top: 30px;
+        }
+        .status {
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 8px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .loading { background: #FFF9C4; color: #F57F17; border-left: 4px solid #F57F17; }
+        .success { background: #C8E6C9; color: #2E7D32; border-left: 4px solid #2E7D32; }
+        .error { background: #FFCDD2; color: #C62828; border-left: 4px solid #C62828; }
+        .info { background: #E3F2FD; color: #1565C0; border-left: 4px solid #1565C0; }
+        .warning { background: #FFE0B2; color: #E65100; border-left: 4px solid #E65100; }
+        
+        .match-status {
+            font-size: 24px;
+            padding: 20px;
+            text-align: center;
+            border-radius: 10px;
+            margin: 20px 0;
+            font-weight: bold;
+        }
+        .match-you { background: #C8E6C9; color: #2E7D32; border: 3px solid #2E7D32; }
+        .match-unknown { background: #FFCDD2; color: #C62828; border: 3px solid #C62828; }
+        .match-none { background: #f5f5f5; color: #666; border: 3px solid #ccc; }
+        
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 14px 28px;
+            font-size: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 10px 5px;
+            transition: all 0.3s;
+            font-weight: bold;
+        }
+        button:hover { background: #5568d3; transform: translateY(-2px); }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        button.danger {
+            background: #f44336;
+        }
+        button.danger:hover {
+            background: #d32f2f;
+        }
+        
+        #videoContainer {
+            margin: 20px 0;
+            position: relative;
+            display: inline-block;
+        }
+        video {
+            width: 100%;
+            max-width: 640px;
+            border-radius: 10px;
+            background: #000;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        
+        .step {
+            background: #f9f9f9;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 10px;
+            border: 2px solid #e0e0e0;
+        }
+        .step.active {
+            border-color: #667eea;
+            background: #f3f4ff;
+        }
+        .step h3 {
+            margin-top: 0;
+            color: #667eea;
+        }
+        
+        .descriptor-info {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            margin: 10px 0;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-box {
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            border: 2px solid #e0e0e0;
+        }
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #667eea;
+        }
+        .stat-label {
+            color: #666;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .progress-fill {
+            height: 100%;
+            background: #667eea;
+            transition: width 0.3s;
+        }
+        
+        .emoji {
+            font-size: 24px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎭 Face Recognition Test</h1>
+        <p>This test stores your face descriptors and then detects if you're the same person.</p>
+
+        <div id="modelStatus" class="status loading">
+            <span class="emoji">⏳</span>
+            <span>Loading models...</span>
+        </div>
+
+        <!-- Step 1: Capture your face -->
+        <div class="step active" id="step1">
+            <h3>Step 1: Store Your Face</h3>
+            <p>We'll capture multiple samples of your face to create a reference profile.</p>
+            
+            <button id="startCaptureBtn" onclick="startCapture()" disabled>
+                📸 Start Webcam & Capture My Face
+            </button>
+            
+            <div id="videoContainer" style="display:none;">
+                <video id="video" autoplay muted playsinline></video>
+                <canvas id="overlay"></canvas>
+            </div>
+            
+            <div id="captureStatus" style="display:none;"></div>
+            <div id="captureProgress" style="display:none;">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+                </div>
+                <p style="text-align: center; color: #666;">
+                    <span id="captureCount">0</span> / <span id="captureTarget">5</span> samples captured
+                </p>
+            </div>
+            
+            <div id="capturedInfo" class="descriptor-info" style="display:none;"></div>
+        </div>
+
+        <!-- Step 2: Test recognition -->
+        <div class="step" id="step2" style="opacity: 0.5; pointer-events: none;">
+            <h3>Step 2: Test Face Recognition</h3>
+            <p>Now we'll continuously detect if you're the same person or someone different.</p>
+            
+            <button id="startTestBtn" onclick="startRecognitionTest()" disabled>
+                🔍 Start Recognition Test
+            </button>
+            
+            <button id="stopTestBtn" onclick="stopRecognitionTest()" style="display:none;" class="danger">
+                ⏹️ Stop Test
+            </button>
+            
+            <div id="matchStatus" class="match-status match-none" style="display:none;">
+                <div class="emoji">👤</div>
+                <div>Waiting for face...</div>
+            </div>
+            
+            <div class="stats" id="stats" style="display:none;">
+                <div class="stat-box">
+                    <div class="stat-value" id="matchCount">0</div>
+                    <div class="stat-label">✅ Matches (You)</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="noMatchCount">0</div>
+                    <div class="stat-label">❌ No Match (Other)</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="distanceValue">-</div>
+                    <div class="stat-label">📏 Current Distance</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="confidenceValue">-</div>
+                    <div class="stat-label">🎯 Confidence</div>
+                </div>
+            </div>
+            
+            <div id="recognitionInfo" class="descriptor-info" style="display:none;"></div>
+        </div>
+
+        <!-- Step 3: Reset -->
+        <div class="step" id="step3" style="opacity: 0.5; pointer-events: none;">
+            <h3>Step 3: Reset & Try Again</h3>
+            <p>Clear stored face data and start over with a new reference face.</p>
+            
+            <button onclick="resetTest()" class="danger">
+                🔄 Clear Stored Face & Reset
+            </button>
+        </div>
+    </div>
+
+    <script type="module">
+        // Check if running from file:// protocol
+        if (window.location.protocol === 'file:') {
+            document.body.innerHTML = `
+                <div class="container">
+                    <h1>⚠️ Server Required</h1>
+                    <div class="status error">
+                        <strong>Cannot run from file:// protocol</strong>
+                    </div>
+                    <div style="padding: 20px; background: #E3F2FD; border-radius: 10px; margin: 20px 0;">
+                        <p><strong>Run a local server:</strong></p>
+                        <pre style="background: #fff; padding: 15px; border-radius: 5px;">python3 -m http.server 8080</pre>
+                        <p>Then open: <strong>http://localhost:8080/test-face-recognition.html</strong></p>
+                    </div>
+                </div>
+            `;
+            throw new Error('Server required');
+        }
+
+        import * as faceapi from './dist/face-api.esm.js';
+
+        const MODEL_PATH = '/model';
+        let stream;
+        let storedDescriptors = null;
+        let faceMatcher = null;
+        let recognitionInterval = null;
+        let captureInterval = null;
+        let capturedDescriptors = [];
+        const CAPTURE_TARGET = 5;
+        const MATCH_THRESHOLD = 0.6;
+        
+        // Stats
+        let matchCount = 0;
+        let noMatchCount = 0;
+
+        // Load models on page load
+        window.addEventListener('load', () => {
+            loadModels();
+        });
+
+        async function loadModels() {
+            const statusDiv = document.getElementById('modelStatus');
+            
+            try {
+                await Promise.all([
+                    faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_PATH),
+                    faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_PATH),
+                    faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_PATH),
+                ]);
+                
+                statusDiv.className = 'status success';
+                statusDiv.innerHTML = '<span class="emoji">✅</span><span>Models loaded! Ready to start.</span>';
+                
+                document.getElementById('startCaptureBtn').disabled = false;
+                
+            } catch (error) {
+                statusDiv.className = 'status error';
+                statusDiv.innerHTML = `<span class="emoji">❌</span><span>Error: ${error.message}</span>`;
+            }
+        }
+
+        window.startCapture = async function() {
+            const button = document.getElementById('startCaptureBtn');
+            const videoContainer = document.getElementById('videoContainer');
+            const video = document.getElementById('video');
+            const captureStatus = document.getElementById('captureStatus');
+            const captureProgress = document.getElementById('captureProgress');
+            
+            button.disabled = true;
+            capturedDescriptors = [];
+            
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                
+                videoContainer.style.display = 'block';
+                captureStatus.style.display = 'block';
+                captureProgress.style.display = 'block';
+                
+                captureStatus.className = 'status info';
+                captureStatus.innerHTML = '<span class="emoji">📸</span><span>Look at the camera! Capturing your face...</span>';
+                
+                video.onloadedmetadata = () => {
+                    video.play();
+                    setupOverlay();
+                    startAutoCapture();
+                };
+                
+            } catch (error) {
+                captureStatus.className = 'status error';
+                captureStatus.innerHTML = `<span class="emoji">❌</span><span>Camera error: ${error.message}</span>`;
+                button.disabled = false;
+            }
+        };
+
+        function setupOverlay() {
+            const video = document.getElementById('video');
+            const overlay = document.getElementById('overlay');
+            overlay.width = video.videoWidth;
+            overlay.height = video.videoHeight;
+        }
+
+        async function startAutoCapture() {
+            const video = document.getElementById('video');
+            const captureStatus = document.getElementById('captureStatus');
+            const captureCount = document.getElementById('captureCount');
+            const progressFill = document.getElementById('progressFill');
+            
+            captureInterval = setInterval(async () => {
+                try {
+                    const detection = await faceapi
+                        .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
+                        .withFaceLandmarks()
+                        .withFaceDescriptor();
+                    
+                    if (detection && capturedDescriptors.length < CAPTURE_TARGET) {
+                        capturedDescriptors.push(detection.descriptor);
+                        
+                        const progress = (capturedDescriptors.length / CAPTURE_TARGET) * 100;
+                        captureCount.textContent = capturedDescriptors.length;
+                        progressFill.style.width = progress + '%';
+                        
+                        // Draw detection box
+                        drawDetection(detection);
+                        
+                        if (capturedDescriptors.length >= CAPTURE_TARGET) {
+                            clearInterval(captureInterval);
+                            finishCapture();
+                        }
+                    }
+                    
+                } catch (error) {
+                    console.error('Capture error:', error);
+                }
+            }, 800);
+        }
+
+        function drawDetection(detection) {
+            const overlay = document.getElementById('overlay');
+            const ctx = overlay.getContext('2d');
+            
+            ctx.clearRect(0, 0, overlay.width, overlay.height);
+            
+            // Draw bounding box
+            const box = detection.detection.box;
+            ctx.strokeStyle = '#4CAF50';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(box.x, box.y, box.width, box.height);
+            
+            // Draw landmarks
+            ctx.fillStyle = '#4CAF50';
+            detection.landmarks.positions.forEach(point => {
+                ctx.beginPath();
+                ctx.arc(point.x, point.y, 2, 0, 2 * Math.PI);
+                ctx.fill();
+            });
+        }
+
+        function finishCapture() {
+            const captureStatus = document.getElementById('captureStatus');
+            const capturedInfo = document.getElementById('capturedInfo');
+            
+            // Create labeled descriptors
+            storedDescriptors = new faceapi.LabeledFaceDescriptors('user', capturedDescriptors);
+            faceMatcher = new faceapi.FaceMatcher(storedDescriptors, MATCH_THRESHOLD);
+            
+            captureStatus.className = 'status success';
+            captureStatus.innerHTML = '<span class="emoji">✅</span><span>Face captured successfully!</span>';
+            
+            capturedInfo.style.display = 'block';
+            capturedInfo.textContent = 
+                `✅ Stored ${capturedDescriptors.length} face descriptors\n` +
+                `📏 Each descriptor: ${capturedDescriptors[0].length} dimensions\n` +
+                `🎯 Match threshold: ${MATCH_THRESHOLD}\n` +
+                `👤 Label: "${storedDescriptors.label}"`;
+            
+            // Enable step 2
+            document.getElementById('step2').style.opacity = '1';
+            document.getElementById('step2').style.pointerEvents = 'auto';
+            document.getElementById('step2').classList.add('active');
+            document.getElementById('step1').classList.remove('active');
+            document.getElementById('startTestBtn').disabled = false;
+            
+            // Enable step 3
+            document.getElementById('step3').style.opacity = '1';
+            document.getElementById('step3').style.pointerEvents = 'auto';
+        }
+
+        window.startRecognitionTest = function() {
+            document.getElementById('startTestBtn').style.display = 'none';
+            document.getElementById('stopTestBtn').style.display = 'inline-block';
+            document.getElementById('matchStatus').style.display = 'block';
+            document.getElementById('stats').style.display = 'grid';
+            document.getElementById('recognitionInfo').style.display = 'block';
+            
+            matchCount = 0;
+            noMatchCount = 0;
+            updateStats();
+            
+            runRecognition();
+        };
+
+        window.stopRecognitionTest = function() {
+            if (recognitionInterval) {
+                clearInterval(recognitionInterval);
+                recognitionInterval = null;
+            }
+            
+            document.getElementById('startTestBtn').style.display = 'inline-block';
+            document.getElementById('stopTestBtn').style.display = 'none';
+            
+            const matchStatus = document.getElementById('matchStatus');
+            matchStatus.className = 'match-status match-none';
+            matchStatus.innerHTML = '<div class="emoji">⏸️</div><div>Test stopped</div>';
+        };
+
+        async function runRecognition() {
+            const video = document.getElementById('video');
+            const matchStatus = document.getElementById('matchStatus');
+            const recognitionInfo = document.getElementById('recognitionInfo');
+            
+            recognitionInterval = setInterval(async () => {
+                try {
+                    const detection = await faceapi
+                        .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
+                        .withFaceLandmarks()
+                        .withFaceDescriptor();
+                    
+                    if (detection) {
+                        // Find best match
+                        const bestMatch = faceMatcher.findBestMatch(detection.descriptor);
+                        
+                        const distance = bestMatch.distance;
+                        const isMatch = bestMatch.label === 'user';
+                        
+                        // Update UI
+                        if (isMatch) {
+                            matchCount++;
+                            matchStatus.className = 'match-status match-you';
+                            matchStatus.innerHTML = 
+                                '<div class="emoji">✅ 😊</div>' +
+                                '<div>IT\'S YOU!</div>' +
+                                `<div style="font-size: 14px; margin-top: 10px;">Distance: ${distance.toFixed(4)}</div>`;
+                        } else {
+                            noMatchCount++;
+                            matchStatus.className = 'match-status match-unknown';
+                            matchStatus.innerHTML = 
+                                '<div class="emoji">❌ 👤</div>' +
+                                '<div>UNKNOWN PERSON</div>' +
+                                `<div style="font-size: 14px; margin-top: 10px;">Distance: ${distance.toFixed(4)}</div>`;
+                        }
+                        
+                        // Update stats
+                        updateStats(distance, isMatch);
+                        
+                        // Draw detection
+                        drawRecognitionBox(detection, isMatch);
+                        
+                        // Update info
+                        recognitionInfo.textContent = 
+                            `Last detection:\n` +
+                            `  Match: ${bestMatch.label}\n` +
+                            `  Distance: ${distance.toFixed(4)} (threshold: ${MATCH_THRESHOLD})\n` +
+                            `  Result: ${isMatch ? '✅ SAME PERSON' : '❌ DIFFERENT PERSON'}\n` +
+                            `  Confidence: ${detection.detection.score.toFixed(4)}`;
+                        
+                    } else {
+                        matchStatus.className = 'match-status match-none';
+                        matchStatus.innerHTML = '<div class="emoji">🔍</div><div>No face detected</div>';
+                        
+                        const overlay = document.getElementById('overlay');
+                        const ctx = overlay.getContext('2d');
+                        ctx.clearRect(0, 0, overlay.width, overlay.height);
+                    }
+                    
+                } catch (error) {
+                    console.error('Recognition error:', error);
+                }
+            }, 500);
+        }
+
+        function drawRecognitionBox(detection, isMatch) {
+            const overlay = document.getElementById('overlay');
+            const ctx = overlay.getContext('2d');
+            
+            ctx.clearRect(0, 0, overlay.width, overlay.height);
+            
+            // Draw bounding box
+            const box = detection.detection.box;
+            ctx.strokeStyle = isMatch ? '#4CAF50' : '#f44336';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(box.x, box.y, box.width, box.height);
+            
+            // Draw label
+            ctx.fillStyle = isMatch ? '#4CAF50' : '#f44336';
+            ctx.fillRect(box.x, box.y - 30, box.width, 30);
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 20px Arial';
+            ctx.fillText(isMatch ? '✓ YOU' : '✗ OTHER', box.x + 10, box.y - 8);
+        }
+
+        function updateStats(distance = null, isMatch = null) {
+            document.getElementById('matchCount').textContent = matchCount;
+            document.getElementById('noMatchCount').textContent = noMatchCount;
+            
+            if (distance !== null) {
+                document.getElementById('distanceValue').textContent = distance.toFixed(3);
+                
+                const confidence = Math.max(0, (1 - distance) * 100);
+                document.getElementById('confidenceValue').textContent = confidence.toFixed(0) + '%';
+            }
+        }
+
+        window.resetTest = function() {
+            if (confirm('Clear stored face data and restart?')) {
+                // Stop everything
+                if (captureInterval) clearInterval(captureInterval);
+                if (recognitionInterval) clearInterval(recognitionInterval);
+                if (stream) stream.getTracks().forEach(track => track.stop());
+                
+                // Reset variables
+                storedDescriptors = null;
+                faceMatcher = null;
+                capturedDescriptors = [];
+                matchCount = 0;
+                noMatchCount = 0;
+                
+                // Reset UI
+                location.reload();
+            }
+        };
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (captureInterval) clearInterval(captureInterval);
+            if (recognitionInterval) clearInterval(recognitionInterval);
+            if (stream) stream.getTracks().forEach(track => track.stop());
+        });
+    </script>
+</body>
+</html>
+

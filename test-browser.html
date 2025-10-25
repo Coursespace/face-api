@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face-API Browser Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 900px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #555;
+            margin-top: 30px;
+        }
+        .status {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .loading { background: #FFF9C4; color: #F57F17; }
+        .success { background: #C8E6C9; color: #2E7D32; }
+        .error { background: #FFCDD2; color: #C62828; }
+        .info { background: #E3F2FD; color: #1565C0; }
+        .result {
+            background: #f9f9f9;
+            padding: 15px;
+            margin: 10px 0;
+            border-left: 4px solid #4CAF50;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 0;
+        }
+        button:hover { background: #45a049; }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        #videoContainer {
+            margin: 20px 0;
+            position: relative;
+        }
+        video {
+            width: 100%;
+            max-width: 640px;
+            border-radius: 5px;
+            background: #000;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .checkmark { color: #4CAF50; }
+        .crossmark { color: #f44336; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔬 Face-API Essential Functionality Test</h1>
+        <p>This test verifies all components used in your React project.</p>
+
+        <div class="test-section">
+            <h2>1️⃣ Model Loading</h2>
+            <div id="modelStatus" class="status loading">⏳ Waiting to start...</div>
+            <div id="modelResults" class="result" style="display:none;"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>2️⃣ Webcam Test</h2>
+            <button id="startBtn" onclick="startWebcam()">Start Webcam Test</button>
+            <div id="webcamStatus" class="status info" style="display:none;"></div>
+            <div id="videoContainer" style="display:none;">
+                <video id="video" autoplay muted playsinline></video>
+            </div>
+            <div id="detectionResults" class="result" style="display:none;"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>3️⃣ API Components Test</h2>
+            <div id="apiResults" class="result" style="display:none;"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>📋 Summary</h2>
+            <div id="summary" class="result" style="display:none;"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        // Check if running from file:// protocol
+        if (window.location.protocol === 'file:') {
+            document.body.innerHTML = `
+                <div class="container">
+                    <h1>⚠️ Server Required</h1>
+                    <div class="status error">
+                        <strong>Cannot run from file:// protocol</strong>
+                    </div>
+                    <div class="info" style="padding: 20px; background: #E3F2FD; border-radius: 5px; margin: 20px 0;">
+                        <p>ES modules require a local server. Choose one option:</p>
+                        <h3>Option 1: Python (easiest)</h3>
+                        <pre style="background: #fff; padding: 10px; border-radius: 3px;">cd /Users/maxi/Projekte/face-api
+python3 -m http.server 8080</pre>
+                        <p>Then open: <strong>http://localhost:8080/test-browser.html</strong></p>
+                        
+                        <h3>Option 2: Node.js</h3>
+                        <pre style="background: #fff; padding: 10px; border-radius: 3px;">cd /Users/maxi/Projekte/face-api
+npx http-server -p 8080</pre>
+                        <p>Then open: <strong>http://localhost:8080/test-browser.html</strong></p>
+                        
+                        <h3>Option 3: VS Code</h3>
+                        <p>Install "Live Server" extension, right-click the HTML file → "Open with Live Server"</p>
+                    </div>
+                </div>
+            `;
+            throw new Error('Server required');
+        }
+
+        import * as faceapi from './dist/face-api.esm.js';
+
+        const MODEL_PATH = '/model';
+        let detectionInterval;
+        let stream;
+
+        // Test results tracking
+        const results = {
+            modelsLoaded: false,
+            tinyFaceDetector: false,
+            faceLandmark68Net: false,
+            faceRecognitionNet: false,
+            faceExpressionNet: false,
+            webcamAccess: false,
+            faceDetected: false,
+            landmarksExtracted: false,
+            descriptorsGenerated: false,
+            expressionsDetected: false,
+            faceMatcher: false,
+            labeledDescriptors: false
+        };
+
+        // Auto-start model loading on page load
+        window.addEventListener('load', () => {
+            loadModels();
+        });
+
+        async function loadModels() {
+            const statusDiv = document.getElementById('modelStatus');
+            const resultsDiv = document.getElementById('modelResults');
+            
+            statusDiv.className = 'status loading';
+            statusDiv.textContent = '⏳ Loading models...';
+            
+            try {
+                await Promise.all([
+                    faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_PATH),
+                    faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_PATH),
+                    faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_PATH),
+                    faceapi.nets.faceExpressionNet.loadFromUri(MODEL_PATH),
+                ]);
+                
+                results.modelsLoaded = true;
+                results.tinyFaceDetector = true;
+                results.faceLandmark68Net = true;
+                results.faceRecognitionNet = true;
+                results.faceExpressionNet = true;
+                
+                statusDiv.className = 'status success';
+                statusDiv.textContent = '✅ All models loaded successfully!';
+                
+                resultsDiv.style.display = 'block';
+                resultsDiv.textContent = 
+                    '✓ tinyFaceDetector loaded\n' +
+                    '✓ faceLandmark68Net loaded\n' +
+                    '✓ faceRecognitionNet loaded\n' +
+                    '✓ faceExpressionNet loaded';
+                
+                testAPIComponents();
+                updateSummary();
+            } catch (error) {
+                statusDiv.className = 'status error';
+                statusDiv.textContent = '❌ Error loading models: ' + error.message;
+                resultsDiv.style.display = 'block';
+                resultsDiv.textContent = error.stack;
+            }
+        }
+
+        function testAPIComponents() {
+            const resultsDiv = document.getElementById('apiResults');
+            resultsDiv.style.display = 'block';
+            
+            let output = 'Testing API components:\n\n';
+            
+            try {
+                // Test TinyFaceDetectorOptions
+                const options = new faceapi.TinyFaceDetectorOptions();
+                output += '✓ TinyFaceDetectorOptions: OK\n';
+                
+                // Test LabeledFaceDescriptors with dummy data
+                const dummyDescriptor = new Float32Array(128).fill(0.1);
+                const labeled = new faceapi.LabeledFaceDescriptors('testUser', [dummyDescriptor]);
+                output += '✓ LabeledFaceDescriptors: OK\n';
+                output += `  - Label: "${labeled.label}"\n`;
+                output += `  - Descriptors: ${labeled.descriptors.length}\n`;
+                results.labeledDescriptors = true;
+                
+                // Test FaceMatcher
+                const matcher = new faceapi.FaceMatcher(labeled);
+                output += '✓ FaceMatcher: OK\n';
+                const match = matcher.findBestMatch(dummyDescriptor);
+                output += `  - Test match: ${match.label} (distance: ${match.distance.toFixed(4)})\n`;
+                results.faceMatcher = true;
+                
+            } catch (error) {
+                output += '✗ Error testing API components: ' + error.message + '\n';
+            }
+            
+            resultsDiv.textContent = output;
+            updateSummary();
+        }
+
+        window.startWebcam = async function() {
+            const button = document.getElementById('startBtn');
+            const statusDiv = document.getElementById('webcamStatus');
+            const videoContainer = document.getElementById('videoContainer');
+            const video = document.getElementById('video');
+            const resultsDiv = document.getElementById('detectionResults');
+            
+            button.disabled = true;
+            statusDiv.style.display = 'block';
+            statusDiv.className = 'status loading';
+            statusDiv.textContent = '⏳ Starting webcam...';
+            
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                results.webcamAccess = true;
+                
+                videoContainer.style.display = 'block';
+                resultsDiv.style.display = 'block';
+                
+                statusDiv.className = 'status success';
+                statusDiv.textContent = '✅ Webcam started. Detecting faces...';
+                
+                // Wait for video to be ready
+                video.onloadedmetadata = () => {
+                    video.play();
+                    startDetection();
+                };
+                
+                updateSummary();
+            } catch (error) {
+                statusDiv.className = 'status error';
+                statusDiv.textContent = '❌ Error accessing webcam: ' + error.message;
+                button.disabled = false;
+            }
+        };
+
+        async function startDetection() {
+            const video = document.getElementById('video');
+            const resultsDiv = document.getElementById('detectionResults');
+            
+            detectionInterval = setInterval(async () => {
+                try {
+                    const detections = await faceapi
+                        .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
+                        .withFaceLandmarks()
+                        .withFaceDescriptors()
+                        .withFaceExpressions();
+                    
+                    let output = `Timestamp: ${new Date().toLocaleTimeString()}\n\n`;
+                    
+                    if (detections.length === 0) {
+                        output += 'No faces detected\n';
+                    } else {
+                        results.faceDetected = true;
+                        output += `✓ Detected ${detections.length} face(s)\n\n`;
+                        
+                        detections.forEach((detection, i) => {
+                            output += `Face ${i + 1}:\n`;
+                            output += `  Detection confidence: ${(detection.detection.score * 100).toFixed(2)}%\n`;
+                            
+                            // Test landmarks (including getLeftEye used in your code)
+                            if (detection.landmarks) {
+                                results.landmarksExtracted = true;
+                                const leftEye = detection.landmarks.getLeftEye();
+                                const rightEye = detection.landmarks.getRightEye();
+                                output += `  ✓ Landmarks: ${detection.landmarks.positions.length} points\n`;
+                                output += `    - Left Eye: ${leftEye.length} points at (${leftEye[0].x.toFixed(1)}, ${leftEye[0].y.toFixed(1)})\n`;
+                                output += `    - Right Eye: ${rightEye.length} points\n`;
+                            }
+                            
+                            // Test descriptors
+                            if (detection.descriptor) {
+                                results.descriptorsGenerated = true;
+                                output += `  ✓ Descriptor: ${detection.descriptor.length} dimensions\n`;
+                            }
+                            
+                            // Test expressions
+                            if (detection.expressions) {
+                                results.expressionsDetected = true;
+                                const sortedExpressions = Object.entries(detection.expressions)
+                                    .sort(([,a], [,b]) => b - a)
+                                    .slice(0, 3);
+                                output += `  ✓ Top expressions:\n`;
+                                sortedExpressions.forEach(([expr, prob]) => {
+                                    output += `    - ${expr}: ${(prob * 100).toFixed(1)}%\n`;
+                                });
+                            }
+                            
+                            output += '\n';
+                        });
+                    }
+                    
+                    resultsDiv.textContent = output;
+                    updateSummary();
+                    
+                } catch (error) {
+                    resultsDiv.textContent = 'Detection error: ' + error.message;
+                }
+            }, 1000);
+        }
+
+        function updateSummary() {
+            const summaryDiv = document.getElementById('summary');
+            summaryDiv.style.display = 'block';
+            
+            const checkmark = (val) => val ? '<span class="checkmark">✅</span>' : '<span class="crossmark">❌</span>';
+            
+            summaryDiv.innerHTML = `
+<strong>Core Models:</strong>
+${checkmark(results.tinyFaceDetector)} TinyFaceDetector
+${checkmark(results.faceLandmark68Net)} FaceLandmark68Net
+${checkmark(results.faceRecognitionNet)} FaceRecognitionNet
+${checkmark(results.faceExpressionNet)} FaceExpressionNet
+
+<strong>API Components:</strong>
+${checkmark(results.labeledDescriptors)} LabeledFaceDescriptors
+${checkmark(results.faceMatcher)} FaceMatcher (findBestMatch)
+
+<strong>Detection Features:</strong>
+${checkmark(results.faceDetected)} Face Detection
+${checkmark(results.landmarksExtracted)} Landmarks (getLeftEye, getRightEye, etc.)
+${checkmark(results.descriptorsGenerated)} Face Descriptors
+${checkmark(results.expressionsDetected)} Face Expressions
+
+<strong>Overall Status:</strong>
+${results.modelsLoaded ? '<span class="checkmark">🎉 All essential functionality verified!</span>' : '<span class="crossmark">⏳ Waiting for models to load...</span>'}
+            `.trim();
+        }
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (detectionInterval) clearInterval(detectionInterval);
+            if (stream) stream.getTracks().forEach(track => track.stop());
+        });
+    </script>
+</body>
+</html>
+
